@@ -1,6 +1,6 @@
 from flask import Flask
 app = Flask(__name__)
-
+import random
 
 # Global variable to keep track of the count
 route_count = 0
@@ -10,6 +10,9 @@ route_count = 0
 def service():
     global route_count
     route_count += 1
+
+    x = [random.randint(1, 100) for i in range(100000)]
+    x.sort()
 
     # Write the count to a file
     with open("route_count.txt", "w") as file:

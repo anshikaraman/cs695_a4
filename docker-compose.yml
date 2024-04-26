@@ -23,5 +23,7 @@ services:
     entrypoint: flask run --host 0.0.0.0 --port 8000
     ports:
       - "9001-9010:8000"
+    scale: 4
+
 
 ...

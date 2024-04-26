@@ -5,11 +5,19 @@
 # from flask import Flask, request, jsonify
 # from flask import jsonify
 from fastapi import FastAPI, Query
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import requests
+import threading
+import time
+from contextlib import asynccontextmanager
+
+
+
 
 # app = Flask(__name__)
 app = FastAPI()
+
 
 class ContainerDetails(BaseModel):
     name: str
@@ -19,13 +27,36 @@ class ContainerDetails(BaseModel):
 
 # Define service endpoints
 FRONTEND_DTLS = {}
-POLICY = "LEAST_RESPONSE_TIME"
+POLICY = "ROUND_ROBIN"
 response_time = {}
+cpu_util = {}
 
 # Initialize request count
 req_count = 0
 
+def profiler():
+    global FRONTEND_DTLS
+    while True:
+        time.sleep(1)
+        print(cpu_util)
+        for name in list(FRONTEND_DTLS.keys()):
+            try:
+                res = requests.get(f"http://172.17.0.1:2376/containers/{name}/stats?stream=False")
+                stats = res.json()
+                cpu_util[name] = (stats['cpu_stats']['cpu_usage']['total_usage'] - stats['precpu_stats']['cpu_usage']['total_usage']) \
+                               / (stats['cpu_stats']['system_cpu_usage'] - stats['precpu_stats']['system_cpu_usage'] ) * stats['cpu_stats']['online_cpus'] * 100
+            except Exception as e:
+                pass
+            pass
+    
+
 # define route to accept details about frontend services
+@app.get("/dummy_service")
+def handle_service():
+    return "Dummy Handle"
+    
+
+
 @app.post("/register")
 def register_frontend(container: ContainerDetails):
     global FRONTEND_DTLS, response_time
@@ -51,12 +82,13 @@ def register_frontend(container: ContainerDetails):
 #     return {'message': 'Policy set to ' + policy}
 
 # define a route to accept incoming requests
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 def load_balancer():
     global FRONTEND_DTLS, req_count, response_time
 
     # Increment request count
     req_count += 1
+    
 
     # if policy is round-robin
     if POLICY == "ROUND_ROBIN":
@@ -65,7 +97,8 @@ def load_balancer():
 
         try:
             response = requests.get(service_endpoint)
-            return {'message': f'Hello from the gateway! Request count: {req_count}. Request served at {service_name}', 'response': response.json()}
+            return response.text
+            # return {'message': f'Hello from the gateway! Request count: {req_count}. Request served at {service_name}', 'response': response.json()}
         except Exception as e:
             return {'error': f'Failed to connect to service "{service_name}": {str(e)}'}, 500
 
@@ -88,6 +121,34 @@ def load_balancer():
 
             except Exception as e:
                 return {'error': f'Failed to connect to service "{service_name}": {str(e)}'}, 500
+
+
+    elif POLICY == "PERF":
+        min_service_name = None
+        min_cpu = min(response_time.values())
+
+        for service_name, service_endpoint in FRONTEND_DTLS.items():
+
+            try:
+                if response_time[service_name] == min_cpu:
+                    min_service_name = service_name
+
+                    response = requests.get(FRONTEND_DTLS[min_service_name])
+                    response_time = response.elapsed.total_seconds()
+                    response_time[service_name] = response_time
+
+                return response.text
+
+            except Exception as e:
+                return {'error': f'Failed to connect to service "{service_name}": {str(e)}'}, 500
+
+
+
+
+
+
+t = threading.Thread(target=profiler)
+t.start()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
