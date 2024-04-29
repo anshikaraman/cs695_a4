@@ -1,27 +1,22 @@
 ---
 
-version: '3.3'
+version: "3.8"
 
 services:
-
-  # gateway:
-  #   image: test-gateway
-  #   build:
-  #     context: gateway
-  #     dockerfile: Dockerfile
-  #   restart: unless-stopped
-  #   entrypoint: uvicorn gateway:app --host 0.0.0.0 --port 8000
-  #   ports:
-  #     - 8000:8000
-
+  gateway:
+    image: test-gateway
+    build: gateway
+    restart: unless-stopped
+    entrypoint: uvicorn gateway:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      - frontend
   frontend:
     image: test-frontend
-    build:
-      context: frontend
-      dockerfile: Dockerfile
+    build: frontend
     restart: unless-stopped
-    entrypoint: flask run --host 0.0.0.0 --port 8000
     ports:
-      - "9001-9010:8000"
+      - "9000-9009:7000"
 
 ...
