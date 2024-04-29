@@ -23,7 +23,7 @@
 
 2. One can run the load generator using the following command (httperf or ab [apache benchmark] can be used):
     ```
-    ab -n 1000 -c 10 http://localhost:8080/
+    ab -n 1000 -c 10 http://localhost:8000/
     ```
 
 3. The logs of the gateway and replicas can be seen using the following command:
