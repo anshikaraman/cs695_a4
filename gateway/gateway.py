@@ -1,9 +1,8 @@
 
-# This script defines a Flask application that acts as a gateway to route incoming requests to two different services.
+# This script defines a Flask application that acts as a gateway to route incoming requests to different backend services.
 
 # default imports
-from fastapi import FastAPI, Query
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Query, Request, Response
 from pydantic import BaseModel
 import requests
 
@@ -17,87 +16,130 @@ class ContainerDetails(BaseModel):
     port: int
     status: str
 
-# local variables to store the details of the frontend services
-FRONTEND_DTLS = {}
+# local variables to store the details of the backend services
+BACKEND_DTLS = {}
 req_count = {}; round_robin_idx = 0
 response_time = {}
+avg_response_time = {}
+flag_all_reqs_window = 0
 min_service_name = None
 
+# policy types
+policy_types = ["ROUND_ROBIN", "LEAST_RESPONSE_TIME", "RESOURCE_BASED"]
 # define the policy for load balancing
-POLICY = "LEAST_RESPONSE_TIME"
+POLICY = "ROUND_ROBIN"
+# window size for moving average of response time in least response time policy
+WINDOW_SIZE = 5
 
-# define route to accept details about frontend services
+# define route to accept details about backend services
 @app.post("/register")
-def register_frontend(container: ContainerDetails):
-    global FRONTEND_DTLS, response_time
+def register_backend(container: ContainerDetails):
+    global BACKEND_DTLS, response_time, avg_response_time
 
-    # add the details of the frontend service to the dictionary
+    # add the details of the backend service to the dictionary
     if container.status == "active":
-        FRONTEND_DTLS[container.name] = f"http://{container.name}:7000"
+        BACKEND_DTLS[container.name] = f"http://{container.name}:7000"
         req_count[container.name] = 0
-        response_time[container.name] = 0
-        # print(FRONTEND_DTLS)
-        return {'message': f'Registered frontend service "{container.name}"'}
+        response_time[container.name] = []
+        avg_response_time[container.name] = 0
+        # print(BACKEND_DTLS)
+        return Response(content=f'Registered backend service "{container.name}"', status_code=201)
 
     elif container.status == "inactive":
-        if container.name in FRONTEND_DTLS:
-            del FRONTEND_DTLS[container.name]
-            return {'message': f'Removed frontend service "{container.name}"'}
+        if container.name in BACKEND_DTLS:
+            del BACKEND_DTLS[container.name]
+            return Response(content=f'Removed backend service "{container.name}"', status_code=200)
 
 # define a route to accept the load balancing policy
-# @app.post("/policy")
-# def register_balancing_policy(policy: Query[str]):
-#     return {'message': 'Policy set to ' + policy}
+@app.post("/set-policy")
+def register_balancing_policy(policy: str = "ROUND_ROBIN"):
+    global POLICY
+    if policy not in policy_types:
+        return Response(content=f'Invalid policy type "{policy}". Available types: {", ".join(policy_types)}', status_code=400)
+    else:
+        POLICY = policy
+        return Response(content=f'Set the load balancing policy to "{policy}"', status_code=201)
 
 # define a route to accept incoming requests
 @app.get("/")
-def load_balancer():
-    global FRONTEND_DTLS, req_count, round_robin_idx, response_time, min_service_name, POLICY
+def load_balancer(request: Request):
+    global POLICY, BACKEND_DTLS, req_count, round_robin_idx, response_time, avg_response_time, min_service_name, flag_all_reqs_window
+
+    host = request.client.host
+    port = request.client.port
+    # print("Host: ", host, "Port: ", port)
 
     # for round-robin policy
     if POLICY == "ROUND_ROBIN":
-        service_name = list(FRONTEND_DTLS.keys())[round_robin_idx % len(FRONTEND_DTLS)]
-        service_endpoint = FRONTEND_DTLS[service_name]
-
+        service_name = list(BACKEND_DTLS.keys())[round_robin_idx % len(BACKEND_DTLS)]
+        service_endpoint = BACKEND_DTLS[service_name]
         # increment the round-robin index after selecting the service
         round_robin_idx += 1
 
         try:
             response = requests.get(service_endpoint)
-            # increment the request count
             req_count[service_name] += 1
-            return HTMLResponse(content=f'Hello from the service "{service_name}"! Request count: {req_count[service_name]}', status_code=200)
+            return Response(content=f'Hello from the service "{service_name}"! Request count: {req_count[service_name]}', status_code=200)
         except Exception as e:
-            return HTMLResponse(content=f'Failed to connect to service "{service_name}": {str(e)}', status_code=500)
+            return Response(content=f'Failed to connect to service "{service_name}": {str(e)}', status_code=500)
 
     # for least response time policy
     elif POLICY == "LEAST_RESPONSE_TIME":
-        min_time = min(response_time.values())
 
-        for service_name, service_endpoint in FRONTEND_DTLS.items():
+        # print the response time and average response time for all services
+        # print()
+        # print(f"Request count: {req_count}")
+        # print(f'Response time for all services: {response_time}')
+        # print(f'Average response time for all services: {avg_response_time}')
+        # print(f'Flag all: {flag_all_reqs_window}')
+        # print()
+
+        # if request_count is less than window size, then send request to all services
+        if all(value == WINDOW_SIZE for value in req_count.values()) and flag_all_reqs_window == 0:
+            flag_all_reqs_window = 1
+
+        if flag_all_reqs_window:
+            min_time = min(avg_response_time.values())
+
+            for service_name, service_endpoint in BACKEND_DTLS.items():
+                try:
+                    if avg_response_time[service_name] == min_time:
+                        min_service_name = service_name
+                        response = requests.get(BACKEND_DTLS[min_service_name])
+                        req_count[service_name] += 1
+
+                        # compute the moving average of the response time
+                        elapsed_time = response.elapsed.total_seconds()
+                        response_time[service_name].pop(0)
+                        response_time[service_name].append(elapsed_time)
+                        avg_response_time[service_name] = round(sum(response_time[service_name]) / WINDOW_SIZE, 4)
+
+                        return Response(content=response.text, status_code=200)
+                    else:
+                        continue
+                except Exception as e:
+                    return Response(content=f'Failed to connect to service "{service_name}": {str(e)}', status_code=500)
+        else:
+            # if request_count is less than window size, then send request to all services in round-robin fashion
+            service_name = list(BACKEND_DTLS.keys())[round_robin_idx % len(BACKEND_DTLS)]
+            service_endpoint = BACKEND_DTLS[service_name]
+            # increment the round-robin index after selecting the service
+            round_robin_idx += 1
 
             try:
-                if response_time[service_name] == min_time:
-                    min_service_name = service_name
-                    # print(); print("Service name: ", end="")
-                    # print(FRONTEND_DTLS[min_service_name])
+                response = requests.get(service_endpoint)
+                req_count[service_name] += 1
 
-                    response = requests.get(FRONTEND_DTLS[min_service_name])
+                # compute the moving average of the response time
+                elapsed_time = response.elapsed.total_seconds()
+                response_time[service_name].append(elapsed_time)
 
-                    # compute the average response time
-                    elapsed_time = response.elapsed.total_seconds()
-                    response_time[service_name] = round(((response_time[service_name] * req_count[service_name]) + elapsed_time) / (req_count[service_name] + 1), 4)
-                    # increment the request count
-                    req_count[service_name] += 1
+                if req_count[service_name] == WINDOW_SIZE:
+                    avg_response_time[service_name] = round(sum(response_time[service_name]) / WINDOW_SIZE, 4)
 
-                    # print("Response time: ", end="")
-                    # print(response_time); print()
-                    return HTMLResponse(content=response.text, status_code=200)
-                else:
-                    continue
-
+                return Response(content=response.text, status_code=200)
             except Exception as e:
-                return HTMLResponse(content=f'Failed to connect to service "{service_name}": {str(e)}', status_code=500)
+                return Response(content=f'Failed to connect to service "{service_name}": {str(e)}', status_code=500)
 
 # if __name__ == '__main__':
 #     app.run(host='0.0.0.0', port=5000)

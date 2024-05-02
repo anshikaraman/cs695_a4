@@ -11,10 +11,10 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - frontend
-  frontend:
-    image: test-frontend
-    build: frontend
+      - backend
+  backend:
+    image: test-backend
+    build: backend
     restart: unless-stopped
     ports:
       - "9000-9009:7000"
