@@ -5,7 +5,6 @@
 ### Team Members
 - Anshika Raman (anshikaraman)
 - Aman Sharma
-- Kalind Karia (kalindkaria)
 
 ### Instructions to run the code
 1. Run the following command to start the gateway and replicas of the frontend service. The conductor will start the gateway and 4 replicas of the frontend service.
