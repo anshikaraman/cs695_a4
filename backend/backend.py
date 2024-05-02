@@ -1,5 +1,5 @@
 
-# This file defines a Flask application that acts as a frontend service.
+# This file defines a Flask application that acts as a backend service.
 
 # default imports
 from flask import Flask
