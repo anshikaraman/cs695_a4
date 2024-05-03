@@ -107,9 +107,9 @@
 - Anshika Raman:
     - Implemented the conductor script that manages the load balancer. It starts the gateway service and the backend services on the physical machines using Docker context. It registers the replicas with the gateway and provides options to stop the services, kill a replica, and start a replica.
     - Implemented the backend script that simulates the backend service. It receives the requests from the gateway and sends the response back to the gateway.
-    - Wrote the README.md file.
+    - Implemented the least response time policy in the gateway script. It keeps track of the response times of the replicas for the last `n` requests and forwards the next request to the replica with the least response time.
+    - Wrote the README.md file, created the report and the presentation.
 - Aman Sharma:
-    - Implemented the gateway script that listens for the incoming requests and forwards them to the replicas based on the load balancing policy chosen.
     - Modified the http-load-generator tool to ensure that the requests being generated from each user or thread uses a unique port number. This is done to ensure that the gateway can distinguish between the requests coming from different users.
     - Created the plots for the throughput and the average response time for each load level using the results obtained from the load generator tool.
 
