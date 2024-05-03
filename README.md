@@ -3,8 +3,8 @@
 ## Assignment 4: Implementing a load balancer
 
 ### Team Members
-- Anshika Raman (anshikaraman)
-- Aman Sharma
+- Anshika Raman (210050014)
+- Aman Sharma ()
 
 ### Instructions to run the code
 1. Run the following command to start the gateway and replicas of the frontend service. The conductor will start the gateway and 4 replicas of the frontend service.
