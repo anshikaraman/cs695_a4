@@ -20,15 +20,6 @@ def service():
     x = [random.randint(1, 100) for i in range(100000)]
     x.sort()
 
-    # CPU intensive task
-    matrixA = np.random.rand(100, 100)
-    matrixB = np.random.rand(100, 100)
-    matrixC = np.dot(matrixA, matrixB)
-
-    # Memory intensive task
-    # matrixD = np.random.rand(10000, 10000)
-    # matrixE = np.random.rand(10000, 10000)
-
     # Write the count to a file
     with open("req_count.txt", "w") as file:
         file.write("Access count: ")

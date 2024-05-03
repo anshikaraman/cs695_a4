@@ -101,10 +101,9 @@ if __name__ == "__main__":
                 # set the context to the remote machine
                 subprocess.run(" ".join(["docker", "context", "use", usernames[i]]), shell=True)
 
-                for j in range(1, replicas[i]+1):
-                    container_name = "backend" + str(j)
-                    subprocess.run(" ".join(["docker", "stop", container_name]), shell=True)
-                    subprocess.run(" ".join(["docker", "rm", container_name]), shell=True)
+                for j in range(1, len(replica_dtls)+1):
+                    subprocess.run(" ".join(["docker", "stop", "backend"+str(j)]), shell=True)
+                    subprocess.run(" ".join(["docker", "rm", "backend"+str(j)]), shell=True)
 
             # remove the docker context
             for i in range(len(phys_machine)):
@@ -126,11 +125,14 @@ if __name__ == "__main__":
             subprocess.run(" ".join(["docker", "stop", replica_name.split("-")[1]]), shell=True)
             subprocess.run(" ".join(["docker", "rm", replica_name.split("-")[1]]), shell=True)
 
-            # remove the replica details from the dictionary
-            del replica_dtls[replica_name]
+            ip_addr = replica_dtls[replica_name]["ip"]
+            port = replica_dtls[replica_name]["port"]
 
             # register the backend service with the gateway via POST
-            register_resp = subprocess.run(" ".join(["curl", "-X", "POST", "http://localhost:8000/register", "-H", "Content-Type: application/json", "-d", f"'{{\"name\": \"{usernames[i]}-{container_name}\", \"ip\": \"0.0.0.0\", \"port\": 0, \"status\": \"inactive\"}}'"]), shell=True)
+            register_resp = subprocess.run(" ".join(["curl", "-X", "POST", "http://localhost:8000/register", "-H", "Content-Type: application/json", "-d", f"'{{\"name\": \"{replica_name}\", \"ip\": \"{ip_addr}\", \"port\": {port}, \"status\": \"inactive\"}}'"]), shell=True)
+
+            # remove the replica details from the dictionary
+            del replica_dtls[replica_name]
 
             print(f"Killed the replica {replica_name} successfully")
 
@@ -138,23 +140,33 @@ if __name__ == "__main__":
         elif option == "3":
             # ask the user for the replica to start
             replica_name = input("Enter the replica name to start: ")
+            machine_ip = input("Enter the IP address of the machine: ")
+            machine_port = int(input("Enter the port number of the machine: "))
+            replica_count = int(input("Enter the number of replicas to start: "))
+
+            phys_machine.append(machine_ip)
+
+            # set the context to the remote machine
+            subprocess.run(" ".join(["docker", "context", "create", replica_name.split("-")[0], "--docker", "host=ssh://"+replica_name.split("-")[0]+"@"+machine_ip]), shell=True)
 
             # set the context to the remote machine
             subprocess.run(" ".join(["docker", "context", "use", replica_name.split("-")[0]]), shell=True)
 
-            # filter the replica details from the dictionary based on the remote machine
-            replica_dtls_filtered = {k: v for k, v in replica_dtls.items() if k.split("-")[0] == replica_name.split("-")[0]}
-            # determine the port number for the new replica
-            port = max([int(v["port"]) for v in replica_dtls_filtered.values()]) + 1
+            # build the image for backend service and start the containers with replica
+            subprocess.run(" ".join(["docker", "build", "-t", "test-backend:latest", "backend/."]), shell=True)
 
-            # start the replica
-            subprocess.run(" ".join(["docker", "run", "-d", "-i", "-p", str(port)+":7000", "--name", replica_name, "test-backend:latest"]), shell=True)
+            for j in range(1, replica_count+1):
+                subprocess.run(" ".join(["docker", "run", "-d", "-i", "-p", str(machine_port+j)+":7000", "--name", replica_name.split("-")[1]+str(j), "test-backend:latest"]), shell=True)
 
-            # add the replica details to the dictionary
-            replica_dtls[replica_name] = {"ip": replica_dtls_filtered[0]["ip"], "port": port}
+                # determine the IP and port of the backend service
+                ip_addr = machine_ip
+                port = subprocess.run(" ".join(["docker", "inspect", "-f", "'{{(index (index .NetworkSettings.Ports \"7000/tcp\") 0).HostPort}}'", replica_name.split("-")[1]+str(j)]), shell=True, capture_output=True).stdout.decode("utf-8").replace("'", "").replace("\n", "")
 
-            # register the backend service with the gateway via POST
-            register_resp = subprocess.run(" ".join(["curl", "-X", "POST", "http://localhost:8000/register", "-H", "Content-Type: application/json", "-d", f"'{{\"name\": \"{replica_name}\", \"ip\": \"{replica_dtls_filtered[0]['ip']}\", \"port\": {port}, \"status\": \"active\"}}'"]), shell=True)
+                # add the replica details to the dictionary
+                replica_dtls[replica_name.split("-")[0]+"-"+replica_name.split("-")[1]+str(j)] = {"ip": ip_addr, "port": port}
 
-            print(f"Started the replica {replica_name} successfully")
+                # register the backend service with the gateway via POST
+                register_resp = subprocess.run(" ".join(["curl", "-X", "POST", "http://localhost:8000/register", "-H", "Content-Type: application/json", "-d", f"'{{\"name\": \"{replica_name.split('-')[0]}-{replica_name.split('-')[1]+str(j)}\", \"ip\": \"{ip_addr}\", \"port\": {port}, \"status\": \"active\"}}'"]), shell=True)
+
+                print(f"Started the replica {j} for {replica_name} successfully")
 

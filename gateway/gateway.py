@@ -56,8 +56,9 @@ def register_backend(container: ContainerDetails):
 
     elif container.status == "inactive":
         if container.name in BACKEND_DTLS:
+            msg = f'Removed backend service "{container.name}"'
             del BACKEND_DTLS[container.name]
-            return Response(content=f'Removed backend service "{container.name}"', status_code=200)
+            return Response(content=msg, status_code=200)
 
 # define a route to accept the load balancing policy
 @app.post("/set-policy")
