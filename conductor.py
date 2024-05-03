@@ -4,9 +4,6 @@ import argparse
 import subprocess
 import time
 
-# third-party imports
-from decli import cli
-
 replica_dtls = {}
 
 # main function
